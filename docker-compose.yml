@@ -12,8 +12,10 @@ name: roma-matcher-v2
 # no host weights dir, no internet at start-up. The image defaults ROMA_MODEL=v2,
 # ROMA_V2_SETTING=base and ROMA_CROP_WINDOW_PX=0 (full frame; owner ruling 2026-11-08).
 #
-# Host port 7663 + container name roma-matcher-v2, so this package never collides with the v1
-# package on one host. A 16 GB Jetson cannot RUN both at once (see README) — a station runs one.
+# v1 and v2 are never run in parallel; a station switches between them (owner ruling 2026-11-08).
+# Both publish host port 7662, so rw2's RomaMatcher:BaseAddress stays http://127.0.0.1:7662 and
+# running both by accident is impossible (on a 16 GB Jetson both together OOM). Container name
+# roma-matcher-v2 (v1 is roma-matcher). Switching: see README.
 
 services:
   roma-matcher-v2:
@@ -49,10 +51,10 @@ services:
       - ROMA_DEBUG_DUMP_DIR=${ROMA_DEBUG_DUMP_DIR:-/data/match-dumps}
       - ROMA_DEBUG_DUMP_KEEP=${ROMA_DEBUG_DUMP_KEEP:-7}
 
-    # Loopback-only publish on 7663 (the v1 package owns 7662): rw2 reaches it at
-    # RomaMatcher:BaseAddress = http://127.0.0.1:7663. The container still listens on 7662.
+    # Loopback-only publish on 7662 — the same port as the v1 package, so rw2 needs no change and
+    # only one of the two can be up at a time.
     ports:
-      - "127.0.0.1:7663:7662"
+      - "127.0.0.1:7662:7662"
 
     # Debug dumps land on the host, apart from the v1 package's dumps.
     volumes:
