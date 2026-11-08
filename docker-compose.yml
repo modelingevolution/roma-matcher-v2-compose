@@ -1,0 +1,74 @@
+name: roma-matcher-v2
+
+# Deploy package for the RoMa v2 matcher — the same HTTP API as roma-matcher (v1), served by RoMa v2
+# ("base" preset) on the FULL frame. Owner request 2026-11-08: "prepare roma_v2 base image for rw2 in
+# autoupdater. Same api. added as a separate autoupdater entry - like roma_v1."
+#
+# AutoUpdater pulls the pinned Harbor image and runs it; this file never builds.
+# `up -d`:  docker compose -f docker-compose.yml -f docker-compose.x64.yml up -d   # x86_64
+#           docker compose -f docker-compose.yml -f docker-compose.arm64.yml up -d # ARM64
+#
+# Weights (RoMa v2 checkpoint + DINOv3 hub code) are baked into the image as a torch hub cache —
+# no host weights dir, no internet at start-up. The image defaults ROMA_MODEL=v2,
+# ROMA_V2_SETTING=base and ROMA_CROP_WINDOW_PX=0 (full frame; owner ruling 2026-11-08).
+#
+# Host port 7663 + container name roma-matcher-v2, so this package never collides with the v1
+# package on one host. A 16 GB Jetson cannot RUN both at once (see README) — a station runs one.
+
+services:
+  roma-matcher-v2:
+    image: docker.modelingevolution.com/roma-matcher/roma-matcher-v2:0.0.0
+    container_name: roma-matcher-v2
+    restart: unless-stopped
+
+    # GPU on every target via the legacy runtime (deployment.md GPU row).
+    runtime: nvidia
+
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - ROMA_DEVICE=cuda
+      - ROMA_HOST=0.0.0.0
+      - ROMA_PORT=7662
+      # Per-device tuning: each knob reads from an untracked /data/roma-matcher-v2/.env
+      # (Compose loads ./.env for ${VAR} substitution); `:-default` keeps the fleet default when the
+      # var is absent. AutoUpdater's checkout never deletes untracked files, so a device-local .env
+      # survives updates. Same knobs and defaults as the v1 package.
+      - ROMA_BG_ALIGN_MODEL=${ROMA_BG_ALIGN_MODEL:-affine}
+      - ROMA_BG_ALIGN_MAX_ITERS=${ROMA_BG_ALIGN_MAX_ITERS:-4}
+      - ROMA_BG_ALIGN_MAX_SHIFT=${ROMA_BG_ALIGN_MAX_SHIFT:-30}
+      - ROMA_BG_THRESHOLD=${ROMA_BG_THRESHOLD:-0}
+      - ROMA_BG_MORPH_OPEN=${ROMA_BG_MORPH_OPEN:-3}
+      - ROMA_BG_MORPH_CLOSE=${ROMA_BG_MORPH_CLOSE:-25}
+      - ROMA_BG_MASK_MARGIN_PX=${ROMA_BG_MASK_MARGIN_PX:-16}
+      - ROMA_BG_MAX_MASK_COVERAGE=${ROMA_BG_MAX_MASK_COVERAGE:-0.85}
+      - ROMA_CIRCLE_AREA_REFINE=${ROMA_CIRCLE_AREA_REFINE:-true}
+      - ROMA_CORNER_ENABLE=${ROMA_CORNER_ENABLE:-true}
+      - ROMA_LINES_ENABLE=${ROMA_LINES_ENABLE:-true}
+      # Per-run /match debug dump; set ROMA_DEBUG_DUMP_DIR="" in the device .env to disable.
+      - ROMA_DEBUG_DUMP_DIR=${ROMA_DEBUG_DUMP_DIR:-/data/match-dumps}
+      - ROMA_DEBUG_DUMP_KEEP=${ROMA_DEBUG_DUMP_KEEP:-7}
+
+    # Loopback-only publish on 7663 (the v1 package owns 7662): rw2 reaches it at
+    # RomaMatcher:BaseAddress = http://127.0.0.1:7663. The container still listens on 7662.
+    ports:
+      - "127.0.0.1:7663:7662"
+
+    # Debug dumps land on the host, apart from the v1 package's dumps.
+    volumes:
+      - /var/docker/data/roma-matcher-v2/match-dumps:/data/match-dumps
+
+    # The python image has no curl, so the check uses urllib. start_period covers the model load +
+    # warm-up (same as the v1 package).
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:7662/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 180s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "10"

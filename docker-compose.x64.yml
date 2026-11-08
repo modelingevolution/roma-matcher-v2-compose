@@ -1,0 +1,8 @@
+# x86_64 override — selected by AutoUpdater on `uname -m` = x86_64 and layered:
+#   docker compose -f docker-compose.yml -f docker-compose.x64.yml up -d
+# Pulls the multi-arch Harbor image (amd64 manifest); never builds.
+
+services:
+  roma-matcher-v2:
+    image: docker.modelingevolution.com/roma-matcher/roma-matcher-v2:0.0.0
+    platform: linux/amd64
